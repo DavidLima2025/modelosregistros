@@ -1,0 +1,1365 @@
+import { useEffect, useMemo, useState } from "react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  AlertCircle,
+  BookOpen,
+  CheckCircle2,
+  ClipboardList,
+  Copy,
+  Download,
+  Edit2,
+  FileText,
+  Printer,
+  RotateCcw,
+  Save,
+  Shield,
+  Trash2,
+} from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+
+/**
+ * Filosofia visual: ferramenta operacional em preto e caqui, inspirada em prancheta policial,
+ * priorizando leitura rápida, contraste, navegação lateralizada por modelos e campos condicionais.
+ * Cada bloco deve reforçar eficiência, segurança jurídica e sensação institucional sem exageros visuais.
+ */
+type Genero = "masculino" | "feminino";
+type ModoPreenchimento = "rapido" | "completo";
+
+type HistoricoItem = {
+  id: string;
+  tipo: string;
+  nome: string;
+  data: string;
+  texto: string;
+};
+
+type BancoFrequente = {
+  pessoas: string[];
+  veiculos: string[];
+  guarnicoes: string[];
+};
+
+type RevisaoItem = {
+  label: string;
+  ok: boolean;
+};
+
+type FraseTecnica = {
+  titulo: string;
+  texto: string;
+};
+
+const historicoStorageKey = "bsc-rio-branco-historico-v1";
+const bancoStorageKey = "bsc-rio-branco-banco-frequente-v1";
+const bibliotecaStorageKey = "bsc-rio-branco-biblioteca-v1";
+
+const provasPadrao = [
+  "prints de conversas",
+  "comprovante Pix/transferência",
+  "fotos dos danos",
+  "imagens de câmera",
+  "dados de IMEI/aparelho",
+  "dados bancários/chave Pix",
+  "dados de testemunha",
+  "documentos apresentados",
+];
+
+const documentosExtravio = [
+  "RG (Carteira de Identidade)",
+  "CPF",
+  "CNH (Carteira de Motorista)",
+  "Título de Eleitor",
+  "CTPS (Carteira de Trabalho)",
+  "Certificado de Reservista",
+  "Certidão de Nascimento",
+  "Cartão Bancário",
+  "Cartão de Saúde/SUS",
+  "Cartão de Ônibus",
+  "Documento de Veículo (CRLV)",
+];
+
+const frasesTecnicasPadrao: FraseTecnica[] = [
+  {
+    titulo: "Resguardo de direitos",
+    texto: "O PRESENTE REGISTRO É REALIZADO PARA FINS DE RESGUARDO DE DIREITOS, DOCUMENTAÇÃO FORMAL DOS FATOS NARRADOS E ADOÇÃO DAS PROVIDÊNCIAS LEGAIS CABÍVEIS.",
+  },
+  {
+    titulo: "Preservação de provas",
+    texto: "FOI ORIENTADA A PRESERVAÇÃO DE EVENTUAIS PROVAS, INCLUINDO PRINTS, COMPROVANTES, IMAGENS, VÍDEOS, DADOS DE CONTATO E DEMAIS ELEMENTOS QUE POSSAM AUXILIAR NA APURAÇÃO.",
+  },
+  {
+    titulo: "Sem indícios imediatos",
+    texto: "ATÉ O MOMENTO DO ATENDIMENTO, NÃO FORAM APRESENTADOS OUTROS ELEMENTOS QUE PERMITISSEM A IDENTIFICAÇÃO IMEDIATA DE AUTORIA, MATERIALIDADE COMPLEMENTAR OU LOCALIZAÇÃO DO ENVOLVIDO.",
+  },
+  {
+    titulo: "Direitos constitucionais",
+    texto: "FORAM RESGUARDADOS OS DIREITOS CONSTITUCIONAIS DO ENVOLVIDO, COM CIÊNCIA QUANTO AO MOTIVO DA INTERVENÇÃO POLICIAL E ENCAMINHAMENTO À AUTORIDADE COMPETENTE.",
+  },
+  {
+    titulo: "Orientação às partes",
+    texto: "AS PARTES FORAM ORIENTADAS QUANTO ÀS MEDIDAS LEGAIS CABÍVEIS, BEM COMO SOBRE A POSSIBILIDADE DE COMPLEMENTAÇÃO DAS INFORMAÇÕES PERANTE A AUTORIDADE COMPETENTE.",
+  },
+  {
+    titulo: "Uso proporcional da força",
+    texto: "A ATUAÇÃO POLICIAL OBSERVOU OS PRINCÍPIOS DA LEGALIDADE, NECESSIDADE, PROPORCIONALIDADE E MODERAÇÃO, LIMITANDO-SE ÀS MEDIDAS NECESSÁRIAS PARA O CONTROLE DA SITUAÇÃO.",
+  },
+];
+
+const modelosDiversos = [
+  "VIOLÊNCIA DOMÉSTICA",
+  "AMEAÇA",
+  "DANO",
+  "LESÃO CORPORAL",
+  "VIAS DE FATO",
+  "DESACATO/DESOBEDIÊNCIA",
+  "PESSOA DESAPARECIDA",
+  "LOCALIZAÇÃO DE PESSOA",
+];
+
+export default function Home() {
+  const [activeTab, setActiveTab] = useState("extravio");
+  const [resultado, setResultado] = useState("");
+  const [resultadoTipo, setResultadoTipo] = useState("");
+  const [resultadoNome, setResultadoNome] = useState("");
+  const [modo, setModo] = useState<ModoPreenchimento>("rapido");
+  const [erros, setErros] = useState<string[]>([]);
+  const [historico, setHistorico] = useState<HistoricoItem[]>([]);
+  const [plantao, setPlantao] = useState(false);
+  const [provasSelecionadas, setProvasSelecionadas] = useState<string[]>([]);
+  const [provaOutro, setProvaOutro] = useState("");
+  const [temTestemunha, setTemTestemunha] = useState("nao");
+  const [testemunhas, setTestemunhas] = useState("");
+  const [bancoFreq, setBancoFreq] = useState<BancoFrequente>({ pessoas: [], veiculos: [], guarnicoes: [] });
+  const [freqTexto, setFreqTexto] = useState("");
+  const [freqTipo, setFreqTipo] = useState<keyof BancoFrequente>("pessoas");
+  const [frasesTecnicas, setFrasesTecnicas] = useState<FraseTecnica[]>(frasesTecnicasPadrao);
+  const [editandoFrase, setEditandoFrase] = useState<FraseTecnica | null>(null);
+  const [apagarFrase, setApagarFrase] = useState<FraseTecnica | null>(null);
+  const [novoTitulo, setNovoTitulo] = useState("");
+  const [novoTexto, setNovoTexto] = useState("");
+  const [dialogAberto, setDialogAberto] = useState(false);
+
+  const [comumNome, setComumNome] = useState("");
+  const [comumGenero, setComumGenero] = useState<Genero>("masculino");
+  const [comumLocal, setComumLocal] = useState("BASE DE SEGURANÇA COMUNITÁRIA RIO BRANCO");
+  const [comumDataHora, setComumDataHora] = useState("");
+
+  const [extNome, setExtNome] = useState("");
+  const [extGenero, setExtGenero] = useState<Genero>("masculino");
+  const [extDocs, setExtDocs] = useState<string[]>([]);
+  const [extOutros, setExtOutros] = useState("");
+  const [extSabeLocal, setExtSabeLocal] = useState("nao");
+  const [extLocal, setExtLocal] = useState("");
+  const [extData, setExtData] = useState("");
+
+  const [furNome, setFurNome] = useState("");
+  const [furGenero, setFurGenero] = useState<Genero>("masculino");
+  const [furTipo, setFurTipo] = useState("FURTO");
+  const [furBem, setFurBem] = useState("CELULAR");
+  const [furBemOutro, setFurBemOutro] = useState("");
+  const [furTemImei, setFurTemImei] = useState("nao");
+  const [furModelo, setFurModelo] = useState("");
+  const [furImei, setFurImei] = useState("");
+  const [furValor, setFurValor] = useState("");
+  const [furAutor, setFurAutor] = useState("");
+  const [furAutorPreso, setFurAutorPreso] = useState("nao");
+
+  const [esNome, setEsNome] = useState("");
+  const [esGenero, setEsGenero] = useState<Genero>("masculino");
+  const [esData, setEsData] = useState("");
+  const [esMeio, setEsMeio] = useState("TELEFONE");
+  const [esAutorId, setEsAutorId] = useState("");
+  const [esPretexto, setEsPretexto] = useState("");
+  const [esPagou, setEsPagou] = useState("nao");
+  const [esTipoPag, setEsTipoPag] = useState("PIX");
+  const [esValor, setEsValor] = useState("");
+  const [esDestinatario, setEsDestinatario] = useState("");
+
+  const [trLocalRegistro, setTrLocalRegistro] = useState("BASE DE SEGURANÇA COMUNITÁRIA RIO BRANCO");
+  const [trSolicitante, setTrSolicitante] = useState("");
+  const [trGenero, setTrGenero] = useState<Genero>("masculino");
+  const [trData, setTrData] = useState("");
+  const [trHora, setTrHora] = useState("");
+  const [trVeiculo1, setTrVeiculo1] = useState("");
+  const [trVia, setTrVia] = useState("");
+  const [trBairro, setTrBairro] = useState("");
+  const [trLocalExato, setTrLocalExato] = useState("");
+  const [trVeiculo2, setTrVeiculo2] = useState("");
+  const [trCondutor2, setTrCondutor2] = useState("");
+  const [trVitima, setTrVitima] = useState("nao");
+  const [trNomeVitima, setTrNomeVitima] = useState("");
+  const [trGeneroVitima, setTrGeneroVitima] = useState<Genero>("masculino");
+  const [trLesoes, setTrLesoes] = useState("");
+  const [trSocorro, setTrSocorro] = useState("");
+  const [trUnidadeSaude, setTrUnidadeSaude] = useState("");
+  const [trVitimaDito, setTrVitimaDito] = useState("");
+  const [trTemVersaoCondutor2, setTrTemVersaoCondutor2] = useState("nao");
+  const [trVersaoCondutor2, setTrVersaoCondutor2] = useState("");
+  const [trPericia, setTrPericia] = useState("nao");
+  const [trDanosVeiculos, setTrDanosVeiculos] = useState("");
+  const [trPartesLocal, setTrPartesLocal] = useState("sim");
+
+  const [prGuarnicao, setPrGuarnicao] = useState("");
+  const [prComposicao, setPrComposicao] = useState("");
+  const [prNumeroProcesso, setPrNumeroProcesso] = useState("");
+  const [prDadosProcesso, setPrDadosProcesso] = useState("");
+  const [prTemCameras, setPrTemCameras] = useState("sim");
+  const [prNumeroCamera, setPrNumeroCamera] = useState("");
+  const [prCaracteristicas, setPrCaracteristicas] = useState("");
+  const [prRuaRastreamento, setPrRuaRastreamento] = useState("");
+  const [prNomeSuspeito, setPrNomeSuspeito] = useState("");
+  const [prGeneroSuspeito, setPrGeneroSuspeito] = useState<Genero>("masculino");
+  const [prResistencia, setPrResistencia] = useState("nao");
+  const [prResDesc, setPrResDesc] = useState("");
+  const [prAlgema, setPrAlgema] = useState("nao");
+  const [prEncaminhamento, setPrEncaminhamento] = useState("DEPLAN 2");
+
+  const [divTipo, setDivTipo] = useState("VIOLÊNCIA DOMÉSTICA");
+  const [divNome, setDivNome] = useState("");
+  const [divGenero, setDivGenero] = useState<Genero>("feminino");
+  const [divAutorNome, setDivAutorNome] = useState("");
+  const [divAutorGenero, setDivAutorGenero] = useState<Genero>("masculino");
+  const [divLocal, setDivLocal] = useState("");
+  const [divDataHora, setDivDataHora] = useState("");
+  const [divRelato, setDivRelato] = useState("");
+  const [divTemAutorPreso, setDivTemAutorPreso] = useState("nao");
+  const [divProvidencias, setDivProvidencias] = useState("");
+
+  // Furto/Roubo Imediato
+  const [friPrefixo, setFriPrefixo] = useState("");
+  const [friMilitares, setFriMilitares] = useState("");
+  const [friBloco, setFriBloco] = useState("");
+  const [friFormaConhecimento, setFriFormaConhecimento] = useState("RECEBEU INFORMACOES DE TRANSEUNTES");
+  const [friDetalhesConhecimento, setFriDetalhesConhecimento] = useState("");
+  const [friNomeVitima, setFriNomeVitima] = useState("");
+  const [friGeneroVitima, setFriGeneroVitima] = useState<Genero>("masculino");
+  const [friHistoricoVitima, setFriHistoricoVitima] = useState("");
+  const [friTipoBem, setFriTipoBem] = useState("CELULAR");
+  const [friRastreamentoCelular, setFriRastreamentoCelular] = useState("nao");
+  const [friDadosAparelho, setFriDadosAparelho] = useState("nao");
+  const [friImei, setFriImei] = useState("");
+  const [friMarcaModelo, setFriMarcaModelo] = useState("");
+  const [friLocalDestino, setFriLocalDestino] = useState("CROP 6 BASE POSTO DE ATENDIMENTO");
+  const [friTemAutor, setFriTemAutor] = useState("nao");
+  const [friNomeAutor, setFriNomeAutor] = useState("");
+  const [friGeneroAutor, setFriGeneroAutor] = useState<Genero>("masculino");
+  const [friDeclaracaoAutor, setFriDeclaracaoAutor] = useState("");
+  const [friDelegacia, setFriDelegacia] = useState("DEPLAN 2");
+
+  useEffect(() => {
+    try {
+      const salvo = window.localStorage.getItem(historicoStorageKey);
+      if (salvo) setHistorico(JSON.parse(salvo) as HistoricoItem[]);
+    } catch {
+      setHistorico([]);
+    }
+
+    try {
+      const bancoSalvo = window.localStorage.getItem(bancoStorageKey);
+      if (bancoSalvo) setBancoFreq(JSON.parse(bancoSalvo) as BancoFrequente);
+    } catch {
+      setBancoFreq({ pessoas: [], veiculos: [], guarnicoes: [] });
+    }
+
+    try {
+      const bibliotecaSalva = window.localStorage.getItem(bibliotecaStorageKey);
+      if (bibliotecaSalva) setFrasesTecnicas(JSON.parse(bibliotecaSalva) as FraseTecnica[]);
+    } catch {
+      setFrasesTecnicas(frasesTecnicasPadrao);
+    }
+  }, []);
+
+  const artigo = (genero: Genero) => (genero === "feminino" ? "A" : "O");
+  const senhor = (genero: Genero) => (genero === "feminino" ? "SENHORA" : "SENHOR");
+  const orientado = (genero: Genero) => (genero === "feminino" ? "ORIENTADA" : "ORIENTADO");
+  const conduzido = (genero: Genero) => (genero === "feminino" ? "CONDUZIDA" : "CONDUZIDO");
+  const preso = (genero: Genero) => (genero === "feminino" ? "PRESA" : "PRESO");
+  const vitimaTermo = (genero: Genero) => `${artigo(genero)} ${senhor(genero)}`;
+  const upper = (valor: string, fallback = "NÃO INFORMADO") => (valor.trim() ? valor.trim().toUpperCase() : fallback);
+  const plural = (quantidade: number, singular: string, pluralTexto: string) => (quantidade === 1 ? singular : pluralTexto);
+
+  const salvarBiblioteca = (novasBiblioteca: FraseTecnica[]) => {
+    setFrasesTecnicas(novasBiblioteca);
+    window.localStorage.setItem(bibliotecaStorageKey, JSON.stringify(novasBiblioteca));
+  };
+
+  const editarFrase = (frase: FraseTecnica) => {
+    setEditandoFrase(frase);
+    setNovoTitulo(frase.titulo);
+    setNovoTexto(frase.texto);
+    setDialogAberto(true);
+  };
+
+  const salvarEdicao = () => {
+    if (!editandoFrase || !novoTitulo.trim() || !novoTexto.trim()) return;
+    const atualizado = frasesTecnicas.map((f) =>
+      f.titulo === editandoFrase.titulo ? { titulo: novoTitulo, texto: novoTexto } : f
+    );
+    salvarBiblioteca(atualizado);
+    setEditandoFrase(null);
+    setNovoTitulo("");
+    setNovoTexto("");
+    setDialogAberto(false);
+  };
+
+  const confirmarDelecao = () => {
+    if (!apagarFrase) return;
+    const atualizado = frasesTecnicas.filter((f) => f.titulo !== apagarFrase.titulo);
+    salvarBiblioteca(atualizado);
+    setApagarFrase(null);
+  };
+
+  const toggleProva = (prova: string) => {
+    setProvasSelecionadas((prev) => (prev.includes(prova) ? prev.filter((item) => item !== prova) : [...prev, prova]));
+  };
+
+  const formatarLista = (itens: string[]) => {
+    const limpos = itens.map((item) => item.trim()).filter(Boolean);
+    if (limpos.length === 0) return "";
+    if (limpos.length === 1) return limpos[0].toUpperCase();
+    return `${limpos.slice(0, -1).join(", ").toUpperCase()} E ${limpos[limpos.length - 1].toUpperCase()}`;
+  };
+
+  const complementoProvasETestemunhas = () => {
+    const provas = [...provasSelecionadas, ...(provaOutro.trim() ? [provaOutro.trim()] : [])];
+    const partes: string[] = [];
+
+    if (provas.length > 0) {
+      partes.push(`FORAM INDICADOS/APRESENTADOS OS SEGUINTES ELEMENTOS PARA SUBSIDIAR A DOCUMENTAÇÃO E EVENTUAL APURAÇÃO: ${formatarLista(provas)}.`);
+    }
+
+    if (temTestemunha === "sim" && testemunhas.trim()) {
+      partes.push(`FOI INFORMADA A EXISTÊNCIA DE TESTEMUNHA(S), COM OS SEGUINTES DADOS/REFERÊNCIAS: ${upper(testemunhas)}.`);
+    }
+
+    return partes.length ? `\n\n${partes.join("\n\n")}` : "";
+  };
+
+  const montarCabecalhoInstitucional = (tipo = resultadoTipo, nome = resultadoNome) => {
+    const data = new Date().toLocaleString("pt-BR");
+    return [
+      "BASE DE SEGURANÇA COMUNITÁRIA RIO BRANCO",
+      "REGISTRO OPERACIONAL / HISTÓRICO POLICIAL",
+      `NATUREZA/MODELO: ${upper(tipo, "NÃO INFORMADO")}`,
+      `PESSOA PRINCIPAL: ${upper(nome, "NÃO INFORMADA")}`,
+      `DATA/HORA DA GERAÇÃO: ${data}`,
+      "UNIDADE: BSC RIO BRANCO",
+    ].join("\n");
+  };
+
+  const salvarBancoFrequente = (novoBanco: BancoFrequente) => {
+    setBancoFreq(novoBanco);
+    window.localStorage.setItem(bancoStorageKey, JSON.stringify(novoBanco));
+  };
+
+  const adicionarFrequente = () => {
+    const valor = freqTexto.trim();
+    if (!valor) return;
+    const lista = bancoFreq[freqTipo];
+    const atualizado = {
+      ...bancoFreq,
+      [freqTipo]: [valor, ...lista.filter((item) => item.toLowerCase() !== valor.toLowerCase())].slice(0, 12),
+    } as BancoFrequente;
+    salvarBancoFrequente(atualizado);
+    setFreqTexto("");
+  };
+
+  const removerFrequente = (tipo: keyof BancoFrequente, valor: string) => {
+    salvarBancoFrequente({ ...bancoFreq, [tipo]: bancoFreq[tipo].filter((item) => item !== valor) });
+  };
+
+  const aplicarFrequente = (valor: string) => {
+    if (freqTipo === "pessoas") setComumNome(valor);
+    if (freqTipo === "veiculos") {
+      if (activeTab === "transito") setTrVeiculo1(valor);
+      else setComumLocal(valor);
+    }
+    if (freqTipo === "guarnicoes") setPrComposicao(valor);
+  };
+
+  const salvarHistorico = (tipo: string, nome: string, texto: string) => {
+    const item: HistoricoItem = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      tipo,
+      nome: nome || "NÃO INFORMADO",
+      data: new Date().toLocaleString("pt-BR"),
+      texto,
+    };
+    const atualizado = [item, ...historico].slice(0, 40);
+    setHistorico(atualizado);
+    window.localStorage.setItem(historicoStorageKey, JSON.stringify(atualizado));
+  };
+
+  const finalizarGeracao = (tipo: string, nome: string, texto: string) => {
+    const textoFinal = `${texto.trim()}${complementoProvasETestemunhas()}`.toUpperCase();
+    setResultado(textoFinal);
+    setResultadoTipo(tipo);
+    setResultadoNome(nome || "NÃO INFORMADO");
+    setErros([]);
+    salvarHistorico(tipo, nome, textoFinal);
+  };
+
+  const validar = (campos: Array<[string, string | string[]]>) => {
+    const pendencias = campos
+      .filter(([, valor]) => (Array.isArray(valor) ? valor.length === 0 : !valor.trim()))
+      .map(([nome]) => nome);
+    setErros(pendencias);
+    return pendencias.length === 0;
+  };
+
+  const aplicarDadosComuns = () => {
+    const nome = comumNome;
+    const genero = comumGenero;
+    const local = comumLocal;
+    const dataHora = comumDataHora;
+
+    if (activeTab === "extravio") {
+      setExtNome(nome);
+      setExtGenero(genero);
+      setExtLocal(local);
+      setExtData(dataHora);
+    }
+    if (activeTab === "furto") {
+      setFurNome(nome);
+      setFurGenero(genero);
+    }
+    if (activeTab === "estelionato") {
+      setEsNome(nome);
+      setEsGenero(genero);
+      setEsData(dataHora);
+    }
+    if (activeTab === "transito") {
+      setTrSolicitante(nome);
+      setTrGenero(genero);
+      setTrLocalRegistro(local);
+      setTrData(dataHora);
+    }
+    if (activeTab === "prisao") {
+      setPrNomeSuspeito(nome);
+      setPrGeneroSuspeito(genero);
+      setPrRuaRastreamento(local);
+    }
+    if (activeTab === "diversos") {
+      setDivNome(nome);
+      setDivGenero(genero);
+      setDivLocal(local);
+      setDivDataHora(dataHora);
+    }
+  };
+
+  const toggleDoc = (doc: string) => {
+    setExtDocs((prev) => (prev.includes(doc) ? prev.filter((d) => d !== doc) : [...prev, doc]));
+  };
+
+  const gerarExtravio = () => {
+    const docs = [...extDocs, ...(extOutros.trim() ? [extOutros.trim()] : [])];
+    if (!validar([["Nome do solicitante", extNome], ["Documento ou item extraviado", docs]])) return;
+
+    const solicitante = `${artigo(extGenero)} SOLICITANTE`;
+    const qtd = docs.length;
+    const item = plural(qtd, "ITEM", "ITENS");
+    const documento = plural(qtd, "DOCUMENTO", "DOCUMENTOS");
+    const extraviado = plural(qtd, "EXTRAVIADO", "EXTRAVIADOS");
+    const referido = plural(qtd, "REFERIDO", "REFERIDOS");
+    const foiForam = plural(qtd, "FOI", "FORAM");
+
+    let texto = `EM ATENDIMENTO NA BASE DE SEGURANÇA COMUNITÁRIA RIO BRANCO, COMPARECEU ${senhor(extGenero)} ${upper(extNome)}, RELATANDO QUE TEVE ${qtd === 1 ? "SEU" : "SEUS"} ${documento} PESSOAL ${extraviado}.\n\n`;
+
+    if (extSabeLocal === "sim") {
+      texto += `SEGUNDO ${solicitante}, O EXTRAVIO TERIA OCORRIDO ${upper(extData, "EM DATA/HORÁRIO NÃO PRECISADO")}, NAS IMEDIAÇÕES DE ${upper(extLocal, "LOCAL NÃO PRECISADO")}. INFORMOU NÃO HAVER, A PRINCÍPIO, INDÍCIOS DE SUBTRAÇÃO, VIOLÊNCIA, GRAVE AMEAÇA OU OUTRA AÇÃO CRIMINOSA DIRETA, TRATANDO-SE DE POSSÍVEL EXTRAVIO.\n\n`;
+    } else {
+      texto += `SEGUNDO ${solicitante}, NÃO SOUBE PRECISAR O LOCAL, A DATA OU O MOMENTO EXATO EM QUE OCORREU O EXTRAVIO, NÃO HAVENDO INDÍCIOS, A PRINCÍPIO, DE AÇÃO CRIMINOSA.\n\n`;
+    }
+
+    texto += `INFORMOU QUE ${foiForam} ${extraviado} ${qtd === 1 ? "O SEGUINTE" : "OS SEGUINTES"} ${item}: ${docs.join(", ").toUpperCase()}.\n\n`;
+    texto += `RELATA AINDA QUE, ATÉ O MOMENTO, NÃO POSSUI INFORMAÇÕES SOBRE O PARADEIRO ${qtd === 1 ? "DO" : "DOS"} ${referido} ${item}. DIANTE DOS FATOS, ${solicitante} BUSCOU O PRESENTE REGISTRO PARA FINS DE RESGUARDO DE DIREITOS E PREVENÇÃO CONTRA EVENTUAL USO INDEVIDO DE SEUS DADOS PESSOAIS.`;
+
+    finalizarGeracao("Extravio", extNome, texto);
+  };
+
+  const descricaoBemFurto = () => {
+    if (furBem === "OUTROS") return upper(furBemOutro, "BEM NÃO ESPECIFICADO");
+    if (furBem === "CORRENTE") return "CORRENTE/SEMELHANTE A OURO";
+    if (furBem === "CELULAR") return "TELEFONE CELULAR";
+    return furBem;
+  };
+
+  const gerarFurto = () => {
+    if (!validar([["Nome da vítima", furNome], ["Bem subtraído", furBem === "OUTROS" ? furBemOutro : furBem]])) return;
+    const vitima = `${artigo(furGenero)} VÍTIMA`;
+    const bem = descricaoBemFurto();
+    let texto = `ESTA EQUIPE POLICIAL FOI ACIONADA PELA VÍTIMA, ${vitimaTermo(furGenero)} ${upper(furNome)}, QUE RELATOU TER SIDO VÍTIMA DE ${furTipo}.\n\n`;
+
+    if (furTipo === "ROUBO") {
+      texto += `${vitima} RELATA QUE O AUTOR, MEDIANTE VIOLÊNCIA OU GRAVE AMEAÇA, SUBTRAIU O SEGUINTE BEM: ${bem}.\n\n`;
+    } else {
+      texto += `${vitima} INFORMA QUE O FATO OCORREU SEM QUE PERCEBESSE A AÇÃO NO MOMENTO EXATO, TRATANDO-SE DE SUBTRAÇÃO SEM VIOLÊNCIA DIRETA, TENDO SIDO SUBTRAÍDO O SEGUINTE BEM: ${bem}.\n\n`;
+    }
+
+    if (furBem === "CELULAR" && furTemImei === "sim") {
+      texto += `DADOS DO APARELHO SUBTRAÍDO: MARCA/MODELO: ${upper(furModelo)}, IMEI: ${upper(furImei)}.\n\n`;
+    }
+    if (furBem === "CORRENTE" && furValor.trim()) {
+      texto += `O BEM SUBTRAÍDO POSSUI VALOR APROXIMADO DE R$ ${furValor.trim()}.\n\n`;
+    }
+    if (furAutor.trim()) {
+      texto += `SOBRE O AUTOR, ${vitima} REPASSOU AS SEGUINTES CARACTERÍSTICAS: ${upper(furAutor)}.\n\n`;
+    }
+
+    if (furAutorPreso === "sim") {
+      texto += `O AUTOR FOI LOCALIZADO/CONTIDO E PRESO, SENDO ENCAMINHADO À DELEGACIA DE POLÍCIA CIVIL PARA AS PROVIDÊNCIAS LEGAIS CABÍVEIS, COM RESGUARDO DOS DIREITOS CONSTITUCIONAIS. `;
+    } else {
+      texto += `FOI REALIZADO RASTREAMENTO E PATRULHAMENTO NAS IMEDIAÇÕES, PORÉM SEM ÊXITO ATÉ O MOMENTO. `;
+    }
+
+    texto += furBem === "CELULAR"
+      ? `${vitima} FOI ${orientado(furGenero)} QUANTO AO BLOQUEIO DO IMEI JUNTO À OPERADORA E ÓRGÃOS COMPETENTES, BEM COMO SOBRE OS PROCEDIMENTOS NA DELEGACIA DE POLÍCIA CIVIL.`
+      : `${vitima} FOI ${orientado(furGenero)} QUANTO AOS PROCEDIMENTOS NA DELEGACIA DE POLÍCIA CIVIL E DEMAIS MEDIDAS LEGAIS CABÍVEIS.`;
+
+    finalizarGeracao("Furto/Roubo", furNome, texto);
+  };
+
+  const gerarFurtoRouboImediato = () => {
+    if (!validar([["Prefixo ou Nomes", friPrefixo], ["Militares", friMilitares], ["Nome da Vitima", friNomeVitima], ["Historico da Vitima", friHistoricoVitima]])) return;
+    
+    const vitima = `${artigo(friGeneroVitima)} VITIMA`;
+    const bem = friTipoBem === "CELULAR" ? "CELULAR" : friTipoBem === "CORRENTINHA" ? "CORRENTINHA/CORRENTE" : friTipoBem === "CARTEIRA" ? "CARTEIRA" : friTipoBem === "MALA" ? "MALA/BOLSA" : "BEM";
+    
+    let texto = `A EQUIPE POLICIAL ${upper(friPrefixo)}, COMPOSTA PELOS MILITARES ${upper(friMilitares)}, ESTAVAM REALIZANDO PATRULHAMENTO NAS IMEDIAÇÕES DA ${upper(friDetalhesConhecimento)}, COM O OBJETIVO DE PREVENIR E REPRIMIR CRIMES CONTRA O PATRIMONIO. A ACAO FOI DESENVOLVIDA COM BASE EM ROTAS TRACADAS E PLANEJADAS DE ACORDO COM DADOS ESTATISTICOS.\n\n`;
+    
+    texto += `DADO MOMENTO A GUARNICIO ${upper(friFormaConhecimento, "RECEBEU INFORMACOES")}${friDetalhesConhecimento.trim() ? ` DE QUE NO LOCAL ${upper(friDetalhesConhecimento)}` : ""}.\n\n`;
+    
+    texto += `FOI REALIZADO CONTATO COM ${vitima} ${upper(friNomeVitima)}, QUE SEGUNDO DECLARACOES ${upper(friHistoricoVitima)}.\n\n`;
+    
+    if (friTipoBem === "CELULAR" && friRastreamentoCelular === "sim") {
+      texto += `FOI REALIZADA A TENTATIVA DE RASTREAMENTO DO APARELHO CELULAR DA VITIMA QUE FOI ${orientado(friGeneroVitima)} QUANTO AOS PROCEDIMENTOS DE BLOQUEIO DO IMEI A OPERADORA BEM COMO UTILIZAR APLICATIVOS DE RASTREIO (GOOGLE ENCONTRE MEU DISPOSITIVO OU BUSCAR IPHONE) PARA FUTUROS RASTREAMENTOS.\n\n`;
+      
+      if (friDadosAparelho === "sim") {
+        texto += `DADOS DO APARELHO: IMEI: ${upper(friImei, "NAO INFORMADO")}, MARCA/MODELO: ${upper(friMarcaModelo, "NAO INFORMADO")}.\n\n`;
+      }
+    }
+    
+    if (friTemAutor === "sim") {
+      texto += `DADO A PALAVRA AO AUTOR, APOS INFORMADO O DIREITO A NAO AUTO INCRIMINACAO, ESTE DECLAROU QUE ${upper(friDeclaracaoAutor)}.\n\n`;
+      texto += `PORTANTO, FOI DADA VOZ DE PRISAO AO AUTOR ${upper(friNomeAutor)} POR FURTO SENDO RESGUARDADOS SEUS DIREITOS CONSTITUCIONAIS. O AUTOR FOI ENCAMINHADO DIRETAMENTE PARA ${upper(friDelegacia)} JUNTAMENTE COM OS MATERIAIS APREENDIDOS PARA APRECIACAO DA AUTORIDADE COMPETENTE.`;
+    } else {
+      texto += `${vitima} FOI ENCAMINHADA PARA ${upper(friLocalDestino)} E NO LOCAL FOI LIBERADA E A GUARNICIO SEGUIU EM PATRULHAMENTO.`;
+    }
+    
+    finalizarGeracao("Furto/Roubo Imediato", friNomeVitima, texto);
+  };
+
+  const gerarEstelionato = () => {
+    if (!validar([["Nome da vítima", esNome], ["Data ou período do contato", esData], ["Pretexto utilizado", esPretexto]])) return;
+    const vitima = `${artigo(esGenero)} VÍTIMA`;
+    let texto = `EM ATENDIMENTO NA BASE DE SEGURANÇA COMUNITÁRIA RIO BRANCO, COMPARECEU ${vitimaTermo(esGenero)} ${upper(esNome)}, RELATANDO QUE FOI VÍTIMA DE ESTELIONATO/FRAUDE.\n\n`;
+    texto += `SEGUNDO ${vitima}, NO DIA/PERÍODO ${upper(esData)}, RECEBEU CONTATO VIA ${upper(esMeio)}, OCASIÃO EM QUE UM INDIVÍDUO, QUE SE IDENTIFICOU COMO ${upper(esAutorId, "NÃO IDENTIFICADO")}, PASSOU A SOLICITAR INFORMAÇÕES, DADOS OU PROVIDÊNCIAS, ALEGANDO ${upper(esPretexto)}.\n\n`;
+
+    if (esPagou === "sim") {
+      texto += `${vitima} RELATOU QUE, ACREDITANDO NA VERACIDADE DAS INFORMAÇÕES, REALIZOU ${upper(esTipoPag)} NO VALOR DE R$ ${upper(esValor, "NÃO INFORMADO")}, DESTINADO A ${upper(esDestinatario, "DESTINATÁRIO NÃO INFORMADO")}. POSTERIORMENTE, PERCEBEU TER SIDO INDUZIDA EM ERRO, CONSTATANDO TRATAR-SE DE POSSÍVEL FRAUDE.\n\n`;
+    } else {
+      texto += `${vitima} INFORMOU QUE NÃO REALIZOU PAGAMENTO OU TRANSFERÊNCIA, BUSCANDO O REGISTRO PARA DOCUMENTAR A TENTATIVA DE FRAUDE E PREVENIR EVENTUAIS PREJUÍZOS.\n\n`;
+    }
+
+    texto += `${vitima} FOI ${orientado(esGenero)} QUANTO AO CONTATO IMEDIATO COM A INSTITUIÇÃO FINANCEIRA, PRESERVAÇÃO DE PRINTS, COMPROVANTES, PERFIS, E-MAILS, CHAVES PIX E DEMAIS ELEMENTOS DE PROVA, BEM COMO SOBRE AS PROVIDÊNCIAS LEGAIS CABÍVEIS.`;
+    finalizarGeracao("Estelionato", esNome, texto);
+  };
+
+  const gerarTransito = () => {
+    if (!validar([["Nome do solicitante", trSolicitante], ["Veículo do solicitante", trVeiculo1], ["Via/local do sinistro", trVia || trLocalExato]])) return;
+    const solicitante = `${artigo(trGenero)} SOLICITANTE`;
+    const tipo = trVitima === "sim" ? "COM VÍTIMA" : "SEM VÍTIMA";
+    let texto = `EM ATENDIMENTO NO ${upper(trLocalRegistro)}, COMPARECEU ${vitimaTermo(trGenero)} ${upper(trSolicitante)}, RELATANDO ENVOLVIMENTO EM ACIDENTE DE TRÂNSITO ${tipo}.\n\n`;
+    texto += `SEGUNDO ${solicitante}, NO DIA ${upper(trData, "NÃO INFORMADO")}, POR VOLTA DE ${upper(trHora, "HORÁRIO NÃO INFORMADO")}, CONDUZIA O VEÍCULO ${upper(trVeiculo1)} PELA ${upper(trVia)}, NO BAIRRO ${upper(trBairro, "NÃO INFORMADO")}, QUANDO, AO ATINGIR O PONTO ${upper(trLocalExato)}, ENVOLVEU-SE EM SINISTRO COM O VEÍCULO ${upper(trVeiculo2, "NÃO INFORMADO")}, CONDUZIDO POR ${upper(trCondutor2, "CONDUTOR NÃO INFORMADO")}.\n\n`;
+
+    if (trVitima === "sim") {
+      texto += `EM DECORRÊNCIA DO ACIDENTE, HOUVE VÍTIMA, SENDO ${upper(trNomeVitima, "VÍTIMA NÃO IDENTIFICADA")}, QUE APRESENTAVA ${upper(trLesoes, "LESÕES APARENTES OU QUEIXAS A APURAR")}, SENDO SOCORRIDA POR ${upper(trSocorro, "MEIO NÃO INFORMADO")} E ENCAMINHADA PARA ${upper(trUnidadeSaude, "UNIDADE DE SAÚDE NÃO INFORMADA")}.\n\n`;
+      if (modo === "completo" && trVitimaDito.trim()) texto += `SEGUNDO RELATO DA VÍTIMA, "${trVitimaDito.trim()}".\n\n`;
+    } else {
+      texto += `RELATA QUE O ACIDENTE RESULTOU APENAS EM DANOS MATERIAIS NOS VEÍCULOS ENVOLVIDOS, NÃO HAVENDO VÍTIMAS OU NECESSIDADE DE ATENDIMENTO MÉDICO NO LOCAL.\n\n`;
+    }
+
+    if (modo === "completo" && trTemVersaoCondutor2 === "sim") {
+      texto += `SEGUNDO O CONDUTOR DO OUTRO VEÍCULO, ${upper(trCondutor2, "NÃO INFORMADO")}, O ACIDENTE OCORREU DA SEGUINTE FORMA: "${upper(trVersaoCondutor2)}".\n\n`;
+    }
+
+    texto += trPericia === "sim" ? `O LOCAL FOI PRESERVADO PARA TRABALHOS PERICIAIS, SENDO ACIONADA A PERÍCIA TÉCNICA.\n\n` : `NÃO HOUVE ACIONAMENTO DE PERÍCIA NO LOCAL.\n\n`;
+    if (trDanosVeiculos.trim()) texto += `OS VEÍCULOS APRESENTAVAM DANOS EM ${upper(trDanosVeiculos)}.\n\n`;
+
+    texto += trPartesLocal === "sim"
+      ? `AS PARTES ENVOLVIDAS PERMANECERAM NO LOCAL, SENDO REALIZADO O DEVIDO REGISTRO PARA FINS DE RESGUARDO DE DIREITOS. DIANTE DOS FATOS, ${solicitante} FOI ${orientado(trGenero)} QUANTO ÀS MEDIDAS LEGAIS CABÍVEIS.`
+      : `CONFORME RELATADO, UMA OU MAIS PARTES ENVOLVIDAS NÃO PERMANECERAM NO LOCAL ATÉ A FINALIZAÇÃO DO ATENDIMENTO, SENDO CONSIGNADAS AS INFORMAÇÕES DISPONÍVEIS PARA FINS DE RESGUARDO DE DIREITOS E POSTERIOR APURAÇÃO, SE NECESSÁRIO. DIANTE DOS FATOS, ${solicitante} FOI ${orientado(trGenero)} QUANTO ÀS MEDIDAS LEGAIS CABÍVEIS.`;
+
+    finalizarGeracao("Acidente de Trânsito", trSolicitante, texto);
+  };
+
+  const gerarPrisao = () => {
+    if (!validar([["Guarnição/viatura", prGuarnicao], ["Composição da guarnição", prComposicao], ["Nome do conduzido", prNomeSuspeito]])) return;
+    const conduzidoArt = `${artigo(prGeneroSuspeito)} ${conduzido(prGeneroSuspeito)}`;
+    let texto = `EM ATENDIMENTO NA BASE DE SEGURANÇA COMUNITÁRIA RIO BRANCO, A GUARNIÇÃO ${upper(prGuarnicao)}, COMPOSTA POR ${upper(prComposicao)}, APRESENTOU O SEGUINTE FATO:\n\n`;
+    texto += `SEGUNDO OS MILITARES, REALIZAVAM PATRULHAMENTO PREVENTIVO NO HIPERCENTRO DE BELO HORIZONTE, A FIM DE PREVENIR E REPRIMIR CRIMES CONTRA O PATRIMÔNIO, EM LOCAL DE INCIDÊNCIA DE FURTOS, ROUBOS E RECEPTAÇÃO, AÇÃO DESENVOLVIDA POR EQUIPE POSICIONADA EM ROTAS TRAÇADAS E PLANEJADAS DE ACORDO COM DADOS ESTATÍSTICOS E INFORMAÇÕES DA SEÇÃO DE INTELIGÊNCIA.\n\n`;
+
+    if (prTemCameras === "sim") {
+      texto += `COM APOIO DAS CÂMERAS DO SISTEMA OLHO VIVO, FOI REPASSADO VIA REDE DE RÁDIO QUE A CÂMERA Nº ${upper(prNumeroCamera, "NÃO INFORMADA")} HAVIA FLAGRADO UM INDIVÍDUO COM CARACTERÍSTICAS SEMELHANTES ÀS DE SUSPEITO COM MANDADO DE PRISÃO EM ABERTO, CONSTANTE EM LISTA LEVANTADA PELO SERVIÇO DE INTELIGÊNCIA.\n\n`;
+    } else {
+      texto += `DURANTE A AÇÃO, FORAM REPASSADAS INFORMAÇÕES DE INTELIGÊNCIA INDICANDO A PRESENÇA DE INDIVÍDUO COM CARACTERÍSTICAS SEMELHANTES ÀS DE SUSPEITO COM MANDADO DE PRISÃO EM ABERTO.\n\n`;
+    }
+
+    texto += `O SUSPEITO POSSUÍA AS SEGUINTES CARACTERÍSTICAS: ${upper(prCaracteristicas, "NÃO INFORMADAS")}. DIANTE DISSO, A GUARNIÇÃO REALIZOU RASTREAMENTO, SENDO O SUSPEITO LOCALIZADO NA RUA/LOCAL ${upper(prRuaRastreamento)}, ONDE LHE FOI DADA ORDEM DE PARADA. AO SER ABORDADO, IDENTIFICOU-SE COMO ${upper(prNomeSuspeito)}.\n\n`;
+    texto += `EM CONSULTA AOS SISTEMAS INFORMATIZADOS, CONSTATOU-SE QUE HAVIA EM SEU DESFAVOR MANDADO DE PRISÃO EM ABERTO. `;
+    if (prNumeroProcesso.trim() || prDadosProcesso.trim()) {
+      texto += `DADOS DO PROCESSO/MANDADO: ${prNumeroProcesso.trim() ? `PROCESSO Nº ${upper(prNumeroProcesso)}` : "NÚMERO NÃO INFORMADO"}${prDadosProcesso.trim() ? `, ${upper(prDadosProcesso)}` : ""}. `;
+    }
+    texto += `DESSA FORMA, A GUARNIÇÃO INFORMOU ${conduzidoArt} ACERCA DO MANDADO, SENDO DADA VOZ DE PRISÃO E RESGUARDADOS OS SEUS DIREITOS CONSTITUCIONAIS.\n\n`;
+
+    if (prResistencia === "sim") {
+      texto += `HOUVE RESISTÊNCIA À AÇÃO POLICIAL, CONSISTENTE EM ${upper(prResDesc)}, SENDO NECESSÁRIO O USO PROPORCIONAL DA FORÇA PARA CONTENÇÃO E SEGURANÇA DA EQUIPE, DO ENVOLVIDO E DE TERCEIROS.\n\n`;
+    } else {
+      texto += `${conduzidoArt} NÃO OFERECEU RESISTÊNCIA À ABORDAGEM.\n\n`;
+    }
+
+    if (prAlgema === "sim") {
+      texto += `FOI NECESSÁRIO O USO DE ALGEMAS, EM OBSERVÂNCIA À SEGURANÇA DA EQUIPE, DO CONDUZIDO E DE TERCEIROS, CONFORME FUNDAMENTAÇÃO OPERACIONAL E PARÂMETROS DA SÚMULA VINCULANTE Nº 11 DO STF.\n\n`;
+    }
+
+    texto += `AO FINAL, ${conduzidoArt} FOI ${preso(prGeneroSuspeito)} E ENCAMINHADO IMEDIATAMENTE À ${prEncaminhamento}, PARA AS PROVIDÊNCIAS DE POLÍCIA JUDICIÁRIA CABÍVEIS.`;
+    finalizarGeracao("Cumprimento de Prisão", prNomeSuspeito, texto);
+  };
+
+  const gerarDiversos = () => {
+    if (!validar([["Nome da pessoa atendida", divNome], ["Relato principal", divRelato]])) return;
+    const pessoa = `${artigo(divGenero)} ${senhor(divGenero)}`;
+    const vitima = `${artigo(divGenero)} VÍTIMA`;
+    const autor = divAutorNome.trim() ? `${artigo(divAutorGenero)} ${senhor(divAutorGenero)} ${upper(divAutorNome)}` : "AUTOR NÃO IDENTIFICADO";
+    let texto = `EM ATENDIMENTO NA BASE DE SEGURANÇA COMUNITÁRIA RIO BRANCO, COMPARECEU ${pessoa} ${upper(divNome)}, RELATANDO FATO RELACIONADO À NATUREZA ${upper(divTipo)}.\n\n`;
+
+    if (divTipo === "PESSOA DESAPARECIDA") {
+      texto += `SEGUNDO O RELATO, A PESSOA ENCONTRA-SE EM LOCAL INCERTO OU NÃO SABIDO DESDE ${upper(divDataHora, "DATA/HORÁRIO NÃO INFORMADO")}, TENDO COMO ÚLTIMA REFERÊNCIA ${upper(divLocal, "LOCAL NÃO INFORMADO")}. FORAM REPASSADAS AS SEGUINTES INFORMAÇÕES RELEVANTES: ${upper(divRelato)}.\n\n`;
+      texto += `${vitima} FOI ${orientado(divGenero)} QUANTO À NECESSIDADE DE PRESERVAR CONTATOS, MENSAGENS, IMAGENS, ROTAS, VÍNCULOS E DEMAIS INFORMAÇÕES QUE POSSAM AUXILIAR NA LOCALIZAÇÃO, BEM COMO A FORMALIZAR COMPLEMENTAÇÃO PERANTE A AUTORIDADE COMPETENTE.`;
+    } else if (divTipo === "LOCALIZAÇÃO DE PESSOA") {
+      texto += `SEGUNDO O RELATO, A PESSOA FOI LOCALIZADA EM ${upper(divLocal, "LOCAL NÃO INFORMADO")}, NA DATA/PERÍODO ${upper(divDataHora, "NÃO INFORMADO")}. CONSTAM COMO INFORMAÇÕES RELEVANTES: ${upper(divRelato)}.\n\n`;
+      texto += `O PRESENTE REGISTRO É REALIZADO PARA DOCUMENTAÇÃO FORMAL DA LOCALIZAÇÃO, ATUALIZAÇÃO DAS INFORMAÇÕES E RESGUARDO DE DIREITOS DAS PARTES ENVOLVIDAS.`;
+    } else if (divTipo === "VIOLÊNCIA DOMÉSTICA") {
+      texto += `SEGUNDO ${vitima}, O FATO OCORREU EM ${upper(divLocal, "LOCAL NÃO INFORMADO")}, NA DATA/PERÍODO ${upper(divDataHora, "NÃO INFORMADO")}, TENDO COMO ENVOLVIDO ${autor}. O RELATO APRESENTADO FOI: ${upper(divRelato)}.\n\n`;
+      texto += `${vitima} FOI ${orientado(divGenero)} QUANTO ÀS MEDIDAS PROTETIVAS DE URGÊNCIA, PRESERVAÇÃO DE PROVAS, ACOMPANHAMENTO À DELEGACIA ESPECIALIZADA QUANDO CABÍVEL E DEMAIS PROVIDÊNCIAS PREVISTAS NA LEGISLAÇÃO APLICÁVEL.`;
+    } else {
+      texto += `SEGUNDO ${vitima}, O FATO OCORREU EM ${upper(divLocal, "LOCAL NÃO INFORMADO")}, NA DATA/PERÍODO ${upper(divDataHora, "NÃO INFORMADO")}, ENVOLVENDO ${autor}. O RELATO APRESENTADO FOI: ${upper(divRelato)}.\n\n`;
+      if (divTemAutorPreso === "sim") {
+        texto += `O ENVOLVIDO FOI CONTIDO/CONDUZIDO PARA APRESENTAÇÃO À AUTORIDADE COMPETENTE, COM RESGUARDO DOS DIREITOS CONSTITUCIONAIS E ADOÇÃO DAS PROVIDÊNCIAS LEGAIS CABÍVEIS.\n\n`;
+      }
+      texto += `${vitima} FOI ${orientado(divGenero)} QUANTO ÀS PROVIDÊNCIAS LEGAIS CABÍVEIS, PRESERVAÇÃO DE EVENTUAIS PROVAS E POSSIBILIDADE DE COMPLEMENTAÇÃO DAS INFORMAÇÕES PERANTE A AUTORIDADE COMPETENTE.`;
+    }
+
+    if (modo === "completo" && divProvidencias.trim()) {
+      texto += `\n\nPROVIDÊNCIAS/OBSERVAÇÕES COMPLEMENTARES: ${upper(divProvidencias)}.`;
+    }
+
+    finalizarGeracao(divTipo, divNome, texto);
+  };
+
+  const revisaoJuridica = useMemo<RevisaoItem[]>(() => {
+    const texto = resultado;
+    if (!texto) return [];
+    return [
+      { label: "Identificação da pessoa atendida ou conduzida", ok: /SENHOR|SENHORA|VÍTIMA|SOLICITANTE|CONDUZIDO|CONDUZIDA/.test(texto) },
+      { label: "Descrição objetiva do fato narrado", ok: /RELATOU|SEGUNDO|INFORMA|APRESENTOU/.test(texto) },
+      { label: "Resguardo de direitos ou providência legal", ok: /RESGUARDO|PROVIDÊNCIAS LEGAIS|MEDIDAS LEGAIS|APURAÇÃO/.test(texto) },
+      { label: "Orientação prestada ao cidadão", ok: /ORIENTAD|CIÊNCIA QUANTO|INFORMOU/.test(texto) },
+      { label: "Preservação de prova ou encaminhamento quando aplicável", ok: /PROVA|COMPROVANTE|ENCAMINHADO|DEPLAN|PERÍCIA|BLOQUEIO|ELEMENTOS/.test(texto) },
+      { label: "Cabeçalho institucional disponível para cópia/impressão", ok: Boolean(resultadoTipo && resultadoNome) },
+      { label: "Checklist de anexos/provas considerado", ok: provasSelecionadas.length > 0 || provaOutro.trim().length > 0 || /ELEMENTOS|PROVAS|COMPROVANTES/.test(texto) },
+      { label: "Testemunhas avaliadas quando informadas", ok: temTestemunha === "nao" || /TESTEMUNHA/.test(texto) },
+      { label: "Texto sem marcadores pendentes", ok: !/\[|\]|INSERIR|PREENCHER/.test(texto) },
+    ];
+  }, [resultado, resultadoNome, resultadoTipo, provaOutro, provasSelecionadas.length, temTestemunha]);
+
+  const resumoOperacional = useMemo(() => {
+    if (!resultado) return "";
+    const provas = [...provasSelecionadas, ...(provaOutro.trim() ? [provaOutro.trim()] : [])];
+    return [
+      `MODELO: ${upper(resultadoTipo, "NÃO INFORMADO")}`,
+      `PESSOA PRINCIPAL: ${upper(resultadoNome, "NÃO INFORMADA")}`,
+      `ABA/CONTEXTO ATUAL: ${upper(activeTab)}`,
+      `LOCAL/REFERÊNCIA: ${upper(comumLocal || trLocalRegistro || divLocal, "NÃO INFORMADO")}`,
+      `PROVAS/ANEXOS: ${provas.length ? formatarLista(provas) : "NÃO INFORMADOS"}`,
+      `TESTEMUNHAS: ${temTestemunha === "sim" ? upper(testemunhas, "INFORMADAS, SEM DADOS COMPLETOS") : "NÃO INFORMADAS"}`,
+      `PROVIDÊNCIA: HISTÓRICO GERADO PARA DOCUMENTAÇÃO, RESGUARDO DE DIREITOS E PROVIDÊNCIAS LEGAIS CABÍVEIS.`,
+    ].join("\n");
+  }, [activeTab, comumLocal, divLocal, provaOutro, provasSelecionadas, resultado, resultadoNome, resultadoTipo, testemunhas, temTestemunha, trLocalRegistro]);
+
+  const resultadoComCabecalho = useMemo(() => {
+    if (!resultado) return "";
+    return `${montarCabecalhoInstitucional()}\n\nRESUMO OPERACIONAL:\n${resumoOperacional}\n\nHISTÓRICO:\n${resultado}`;
+  }, [resultado, resumoOperacional, resultadoNome, resultadoTipo]);
+
+  const copiarTexto = async () => {
+    if (!resultado) return;
+    await navigator.clipboard.writeText(resultado);
+  };
+
+  const copiarComCabecalho = async () => {
+    if (!resultadoComCabecalho) return;
+    await navigator.clipboard.writeText(resultadoComCabecalho);
+  };
+
+  const copiarResumo = async () => {
+    if (!resumoOperacional) return;
+    await navigator.clipboard.writeText(resumoOperacional);
+  };
+
+  const baixarTxt = () => {
+    if (!resultado) return;
+    const element = document.createElement("a");
+    const file = new Blob([resultadoComCabecalho || resultado], { type: "text/plain;charset=utf-8" });
+    element.href = URL.createObjectURL(file);
+    element.download = `${resultadoTipo || "registro"}.txt`.replaceAll("/", "-");
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
+  };
+
+  const baixarDoc = () => {
+    if (!resultado) return;
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${resultadoTipo}</title></head><body><pre style="white-space:pre-wrap;font-family:Arial,sans-serif;line-height:1.5">${resultadoComCabecalho || resultado}</pre></body></html>`;
+    const element = document.createElement("a");
+    const file = new Blob([html], { type: "application/msword;charset=utf-8" });
+    element.href = URL.createObjectURL(file);
+    element.download = `${resultadoTipo || "registro"}.doc`.replaceAll("/", "-");
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
+  };
+
+  const imprimirResultado = () => {
+    if (!resultado) return;
+    const janela = window.open("", "_blank", "width=900,height=700");
+    if (!janela) return;
+    janela.document.write(`<!doctype html><html><head><title>${resultadoTipo}</title><style>body{font-family:Arial,sans-serif;padding:32px;line-height:1.55} pre{white-space:pre-wrap} h1{font-size:18px;text-align:center}.assinatura{margin-top:48px;text-align:center;border-top:1px solid #333;padding-top:8px}</style></head><body><pre>${resultadoComCabecalho || resultado}</pre><div class="assinatura">RESPONSÁVEL PELO REGISTRO</div></body></html>`);
+    janela.document.close();
+    janela.focus();
+    janela.print();
+  };
+
+  const inserirFrase = (texto: string) => {
+    setResultado((atual) => (atual ? `${atual}\n\n${texto}` : texto));
+  };
+
+  const excluirHistorico = (id: string) => {
+    const atualizado = historico.filter((item) => item.id !== id);
+    setHistorico(atualizado);
+    window.localStorage.setItem(historicoStorageKey, JSON.stringify(atualizado));
+  };
+
+  const limparTudo = () => {
+    setResultado("");
+    setResultadoTipo("");
+    setResultadoNome("");
+    setErros([]);
+
+    // Limpar campos da aba ativa
+    if (activeTab === "extravio") {
+      setExtNome("");
+      setExtGenero("masculino");
+      setExtDocs([]);
+      setExtOutros("");
+      setExtSabeLocal("nao");
+      setExtLocal("");
+      setExtData("");
+    } else if (activeTab === "furto") {
+      setFurNome("");
+      setFurGenero("masculino");
+      setFurTipo("FURTO");
+      setFurBem("CELULAR");
+      setFurBemOutro("");
+      setFurTemImei("nao");
+      setFurModelo("");
+      setFurImei("");
+      setFurValor("");
+      setFurAutor("");
+      setFurAutorPreso("nao");
+    } else if (activeTab === "estelionato") {
+      setEsNome("");
+      setEsGenero("masculino");
+      setEsData("");
+      setEsMeio("TELEFONE");
+      setEsAutorId("");
+      setEsPretexto("");
+      setEsPagou("nao");
+      setEsTipoPag("PIX");
+      setEsValor("");
+      setEsDestinatario("");
+    } else if (activeTab === "transito") {
+      setTrLocalRegistro("BASE DE SEGURANÇA COMUNITÁRIA RIO BRANCO");
+      setTrSolicitante("");
+      setTrGenero("masculino");
+      setTrData("");
+      setTrHora("");
+      setTrVeiculo1("");
+      setTrVia("");
+      setTrBairro("");
+      setTrLocalExato("");
+      setTrVeiculo2("");
+      setTrCondutor2("");
+      setTrVitima("nao");
+      setTrNomeVitima("");
+      setTrGeneroVitima("masculino");
+      setTrLesoes("");
+      setTrSocorro("");
+      setTrUnidadeSaude("");
+      setTrVitimaDito("");
+      setTrTemVersaoCondutor2("nao");
+      setTrVersaoCondutor2("");
+      setTrPericia("nao");
+      setTrDanosVeiculos("");
+      setTrPartesLocal("sim");
+    } else if (activeTab === "prisao") {
+      setPrGuarnicao("");
+      setPrComposicao("");
+      setPrNumeroProcesso("");
+      setPrDadosProcesso("");
+      setPrTemCameras("sim");
+      setPrNumeroCamera("");
+      setPrCaracteristicas("");
+      setPrRuaRastreamento("");
+      setPrNomeSuspeito("");
+      setPrGeneroSuspeito("masculino");
+      setPrResistencia("nao");
+      setPrResDesc("");
+      setPrAlgema("nao");
+      setPrEncaminhamento("DEPLAN 2");
+    } else if (activeTab === "furtoImediato") {
+      setFriPrefixo("");
+      setFriMilitares("");
+      setFriBloco("");
+      setFriFormaConhecimento("RECEBEU INFORMACOES DE TRANSEUNTES");
+      setFriDetalhesConhecimento("");
+      setFriNomeVitima("");
+      setFriGeneroVitima("masculino");
+      setFriHistoricoVitima("");
+      setFriTipoBem("CELULAR");
+      setFriRastreamentoCelular("nao");
+      setFriDadosAparelho("nao");
+      setFriImei("");
+      setFriMarcaModelo("");
+      setFriLocalDestino("CROP 6 BASE POSTO DE ATENDIMENTO");
+      setFriTemAutor("nao");
+      setFriNomeAutor("");
+      setFriGeneroAutor("masculino");
+      setFriDeclaracaoAutor("");
+      setFriDelegacia("DEPLAN 2");
+    } else if (activeTab === "diversos") {
+      setDivTipo("VIOLÊNCIA DOMÉSTICA");
+      setDivNome("");
+      setDivGenero("feminino");
+      setDivAutorNome("");
+      setDivAutorGenero("masculino");
+      setDivLocal("");
+      setDivDataHora("");
+      setDivRelato("");
+      setDivTemAutorPreso("nao");
+      setDivProvidencias("");
+    }
+  };
+
+  const cardChecklistOperacional = () => (
+    <Card className="mb-6 border-primary/25 bg-card">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-lg"><ClipboardList className="h-5 w-5 text-primary" /> Provas, anexos e testemunhas</CardTitle>
+        <CardDescription>Marque uma vez e o sistema acrescenta ao histórico gerado, quando houver informação disponível.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 rounded-lg border border-border bg-muted p-4 md:grid-cols-4">
+          {provasPadrao.map((prova) => (
+            <label key={prova} className="flex items-center gap-2 text-sm">
+              <Checkbox checked={provasSelecionadas.includes(prova)} onCheckedChange={() => toggleProva(prova)} />
+              {prova}
+            </label>
+          ))}
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="space-y-2">
+            <Label>Outras provas/anexos</Label>
+            <Input value={provaOutro} onChange={(e) => setProvaOutro(e.target.value)} placeholder="Ex: recibo, protocolo, filmagem particular" className="bg-muted border-border" />
+          </div>
+          <div className="space-y-2">
+            <Label>Há testemunha?</Label>
+            {simNao(temTestemunha, setTemTestemunha, "testemunha-geral")}
+          </div>
+        </div>
+        {temTestemunha === "sim" && (
+          <Textarea value={testemunhas} onChange={(e) => setTestemunhas(e.target.value)} rows={2} placeholder="Nome, contato ou referência da testemunha" className="bg-muted border-border" />
+        )}
+      </CardContent>
+    </Card>
+  );
+
+  const cardBancoFrequente = () => (
+    <Card className="mb-6 border-primary/25 bg-card">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-lg"><Save className="h-5 w-5 text-primary" /> Banco local de dados frequentes</CardTitle>
+        <CardDescription>Dados ficam salvos apenas neste navegador para reduzir digitação em plantões futuros.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-3 md:grid-cols-[180px_1fr_auto]">
+          <Select value={freqTipo} onValueChange={(valor) => setFreqTipo(valor as keyof BancoFrequente)}>
+            <SelectTrigger className="bg-muted border-border"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="pessoas">Pessoas</SelectItem>
+              <SelectItem value="veiculos">Veículos</SelectItem>
+              <SelectItem value="guarnicoes">Guarnições</SelectItem>
+            </SelectContent>
+          </Select>
+          <Input value={freqTexto} onChange={(e) => setFreqTexto(e.target.value)} placeholder="Digite dado frequente para salvar" className="bg-muted border-border" />
+          <Button onClick={adicionarFrequente} className="bg-primary text-primary-foreground hover:bg-primary/90">Salvar</Button>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {bancoFreq[freqTipo].length === 0 && <p className="text-sm text-muted-foreground">Nenhum item salvo nesta categoria.</p>}
+          {bancoFreq[freqTipo].map((valor) => (
+            <div key={valor} className="flex items-center gap-1 rounded-md border border-border bg-muted px-2 py-1 text-sm">
+              <button type="button" onClick={() => aplicarFrequente(valor)} className="text-left hover:text-primary">{valor}</button>
+              <button type="button" onClick={() => removerFrequente(freqTipo, valor)} className="text-muted-foreground hover:text-destructive">×</button>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  const formHeader = (titulo: string, descricao: string) => (
+    <CardHeader>
+      <CardTitle className="flex items-center gap-2">
+        <Shield className="h-5 w-5 text-primary" />
+        {titulo}
+      </CardTitle>
+      <CardDescription>{descricao}</CardDescription>
+    </CardHeader>
+  );
+
+  const generoSelect = (value: Genero, onChange: (valor: Genero) => void, id: string) => (
+    <Select value={value} onValueChange={(valor) => onChange(valor as Genero)}>
+      <SelectTrigger id={id} className="bg-muted border-border">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="masculino">Masculino</SelectItem>
+        <SelectItem value="feminino">Feminino</SelectItem>
+      </SelectContent>
+    </Select>
+  );
+
+  const simNao = (value: string, onChange: (valor: string) => void, prefixo: string) => (
+    <RadioGroup value={value} onValueChange={onChange} className="grid grid-cols-2 gap-2">
+      <div className="flex items-center space-x-2 rounded-md border border-border bg-muted p-3">
+        <RadioGroupItem value="sim" id={`${prefixo}-sim`} />
+        <label htmlFor={`${prefixo}-sim`} className="cursor-pointer text-sm">Sim</label>
+      </div>
+      <div className="flex items-center space-x-2 rounded-md border border-border bg-muted p-3">
+        <RadioGroupItem value="nao" id={`${prefixo}-nao`} />
+        <label htmlFor={`${prefixo}-nao`} className="cursor-pointer text-sm">Não</label>
+      </div>
+    </RadioGroup>
+  );
+
+  return (
+    <div className="min-h-screen bg-background text-foreground">
+      <header className="border-b border-border bg-card/80 backdrop-blur">
+        <div className="container py-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <div className="flex items-center gap-3">
+                <Shield className="h-8 w-8 text-primary" />
+                <div>
+                  <h1 className="text-3xl font-bold tracking-tight">BSC Rio Branco</h1>
+                  <p className="text-muted-foreground">Sistema interativo de registros policiais com concordância, histórico e revisão jurídica.</p>
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Select value={modo} onValueChange={(valor) => setModo(valor as ModoPreenchimento)}>
+                <SelectTrigger className="w-[190px] bg-muted border-border">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="rapido">Modo rápido</SelectItem>
+                  <SelectItem value="completo">Modo completo</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button variant={plantao ? "default" : "outline"} className={plantao ? "bg-primary text-primary-foreground hover:bg-primary/90" : "border-border"} onClick={() => setPlantao((atual) => !atual)}>
+                <Shield className="mr-2 h-4 w-4" /> {plantao ? "Modo plantão ativo" : "Modo plantão"}
+              </Button>
+              <Button variant="outline" className="border-border" onClick={limparTudo}>
+                <Trash2 className="mr-2 h-4 w-4" /> Limpar resultado
+              </Button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main className="container py-8">
+
+
+        {erros.length > 0 && (
+          <Alert className="mb-6 border-destructive/40 bg-destructive/10">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              Preencha os campos essenciais antes de gerar: <strong>{erros.join(", ")}</strong>.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+          <TabsList className="flex h-auto flex-wrap justify-start gap-2 bg-card p-2">
+            <TabsTrigger value="extravio">Extravio</TabsTrigger>
+            <TabsTrigger value="furto">Furto/Roubo</TabsTrigger>
+            <TabsTrigger value="furtoImediato">Furto/Roubo Imediato</TabsTrigger>
+            <TabsTrigger value="estelionato">Estelionato</TabsTrigger>
+            <TabsTrigger value="transito">Trânsito</TabsTrigger>
+            <TabsTrigger value="prisao">Prisão</TabsTrigger>
+            <TabsTrigger value="diversos">Outros Modelos</TabsTrigger>
+            <TabsTrigger value="historico">Histórico</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="extravio">
+            <Card>{formHeader("Extravio de Documentos/Objetos", "Selecione os itens e informe local/hora apenas se houver referência segura.")}
+              <CardContent className="space-y-5">
+                <Alert className="border-primary/30 bg-primary/5"><AlertCircle className="h-4 w-4" /><AlertDescription>Art. 299 do Código Penal: atenção à veracidade das informações declaradas.</AlertDescription></Alert>
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div className="space-y-2 md:col-span-2"><Label>Nome do solicitante</Label><Input value={extNome} onChange={(e) => setExtNome(e.target.value)} className="bg-muted border-border" /></div>
+                  <div className="space-y-2"><Label>Gênero</Label>{generoSelect(extGenero, setExtGenero, "ext-genero")}</div>
+                </div>
+                <div className="space-y-3"><Label>Documentos extraviados</Label><div className="grid gap-3 rounded-lg border border-border bg-muted p-4 md:grid-cols-3">{documentosExtravio.map((doc) => <label key={doc} className="flex items-center gap-2 text-sm"><Checkbox checked={extDocs.includes(doc)} onCheckedChange={() => toggleDoc(doc)} />{doc}</label>)}</div></div>
+                <div className="space-y-2"><Label>Outros itens</Label><Input value={extOutros} onChange={(e) => setExtOutros(e.target.value)} placeholder="Ex: carteira, R$ 50,00" className="bg-muted border-border" /></div>
+                <div className="space-y-3"><Label>Sabe local/data/hora aproximados?</Label>{simNao(extSabeLocal, setExtSabeLocal, "ext-local")}</div>
+                {extSabeLocal === "sim" && <div className="grid gap-4 rounded-lg border border-primary/30 bg-primary/5 p-4 md:grid-cols-2"><div className="space-y-2"><Label>Data/hora aproximada</Label><Input value={extData} onChange={(e) => setExtData(e.target.value)} className="bg-background border-border" /></div><div className="space-y-2"><Label>Local aproximado</Label><Input value={extLocal} onChange={(e) => setExtLocal(e.target.value)} className="bg-background border-border" /></div></div>}
+                <Button onClick={gerarExtravio} className="w-full bg-primary text-primary-foreground hover:bg-primary/90"><FileText className="mr-2 h-4 w-4" />Gerar Histórico</Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="furto">
+            <Card>{formHeader("Furto/Roubo", "A natureza já define se houve grave ameaça; informe o bem e dados complementares.")}
+              <CardContent className="space-y-5">
+                <div className="grid gap-4 md:grid-cols-4">
+                  <div className="space-y-2 md:col-span-2"><Label>Nome da vítima</Label><Input value={furNome} onChange={(e) => setFurNome(e.target.value)} className="bg-muted border-border" /></div>
+                  <div className="space-y-2"><Label>Gênero</Label>{generoSelect(furGenero, setFurGenero, "fur-genero")}</div>
+                  <div className="space-y-2"><Label>Natureza</Label><Select value={furTipo} onValueChange={setFurTipo}><SelectTrigger className="bg-muted border-border"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="FURTO">Furto</SelectItem><SelectItem value="ROUBO">Roubo</SelectItem></SelectContent></Select></div>
+                </div>
+                <div className="space-y-2"><Label>Bem subtraído</Label><Select value={furBem} onValueChange={setFurBem}><SelectTrigger className="bg-muted border-border"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="CELULAR">Celular</SelectItem><SelectItem value="CORRENTE">Corrente/semelhante a ouro</SelectItem><SelectItem value="CARTEIRA">Carteira</SelectItem><SelectItem value="MALA">Mala</SelectItem><SelectItem value="OUTROS">Outros</SelectItem></SelectContent></Select></div>
+                {furBem === "OUTROS" && <div className="space-y-2"><Label>Descreva o bem</Label><Input value={furBemOutro} onChange={(e) => setFurBemOutro(e.target.value)} className="bg-muted border-border" /></div>}
+                {furBem === "CORRENTE" && <div className="space-y-2"><Label>Valor aproximado</Label><Input value={furValor} onChange={(e) => setFurValor(e.target.value)} placeholder="Ex: 500,00" className="bg-muted border-border" /></div>}
+                {furBem === "CELULAR" && <div className="space-y-3 rounded-lg border border-primary/30 bg-primary/5 p-4"><Label>Possui dados do aparelho?</Label>{simNao(furTemImei, setFurTemImei, "fur-imei")}{furTemImei === "sim" && <div className="grid gap-4 md:grid-cols-2"><Input value={furModelo} onChange={(e) => setFurModelo(e.target.value)} placeholder="Marca/modelo" className="bg-background border-border" /><Input value={furImei} onChange={(e) => setFurImei(e.target.value)} placeholder="IMEI" className="bg-background border-border" /></div>}</div>}
+                {modo === "completo" && <div className="space-y-2"><Label>Características do autor</Label><Textarea value={furAutor} onChange={(e) => setFurAutor(e.target.value)} rows={2} className="bg-muted border-border" /></div>}
+                <div className="space-y-3"><Label>Autor foi preso?</Label>{simNao(furAutorPreso, setFurAutorPreso, "fur-preso")}</div>
+                <Button onClick={gerarFurto} className="w-full bg-primary text-primary-foreground hover:bg-primary/90"><FileText className="mr-2 h-4 w-4" />Gerar Histórico</Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="furtoImediato">
+            <Card>{formHeader("Furto/Roubo Imediato", "Modelo para crimes de oportunidade com abordagem imediata pela guarnição.")}
+              <CardContent className="space-y-5">
+                <div className="space-y-3 rounded-lg border border-primary/30 bg-primary/5 p-4">
+                  <Label>Dados da Guarnição</Label>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="space-y-2"><Label>Prefixo ou Nomes</Label><Input value={friPrefixo} onChange={(e) => setFriPrefixo(e.target.value)} placeholder="Ex: GT6 P.A. 10" className="bg-background border-border" /></div>
+                    <div className="space-y-2"><Label>Militares</Label><Input value={friMilitares} onChange={(e) => setFriMilitares(e.target.value)} placeholder="Ex: 3º SARGENTO CICLANO, SOLDADO BELTRANO" className="bg-background border-border" /></div>
+                  </div>
+                  <div className="space-y-2"><Label>Nome do Bloco</Label><Input value={friBloco} onChange={(e) => setFriBloco(e.target.value)} placeholder="Ex: Bloco 1" className="bg-background border-border" /></div>
+                </div>
+
+                <div className="space-y-3">
+                  <Label>Dinâmica do Fato</Label>
+                  <div className="space-y-2"><Label>Forma de Conhecimento</Label><Select value={friFormaConhecimento} onValueChange={setFriFormaConhecimento}><SelectTrigger className="bg-muted border-border"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="RECEBEU INFORMACOES DE TRANSEUNTES">Recebeu informações de transeuntes</SelectItem><SelectItem value="ACIONADOS PELO COMPOM">Acionados pelo COMPOM</SelectItem><SelectItem value="OLHO VIVO">Olho vivo</SelectItem></SelectContent></Select></div>
+                  <div className="space-y-2"><Label>Detalhes do Conhecimento</Label><Input value={friDetalhesConhecimento} onChange={(e) => setFriDetalhesConhecimento(e.target.value)} placeholder="Ex: RUA PRINCIPAL, CENTRO" className="bg-muted border-border" /></div>
+                </div>
+
+                <div className="space-y-3 rounded-lg border border-primary/30 bg-primary/5 p-4">
+                  <Label>Dados da Vítima</Label>
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <div className="space-y-2 md:col-span-2"><Label>Nome da Vítima</Label><Input value={friNomeVitima} onChange={(e) => setFriNomeVitima(e.target.value)} placeholder="Colocar nome da vítima" className="bg-background border-border" /></div>
+                    <div className="space-y-2"><Label>Gênero</Label>{generoSelect(friGeneroVitima, setFriGeneroVitima, "fri-genero")}</div>
+                  </div>
+                  <div className="space-y-2"><Label>Histórico dos Fatos (Versão da Vítima)</Label><Textarea value={friHistoricoVitima} onChange={(e) => setFriHistoricoVitima(e.target.value)} placeholder="Narrar o histórico dos fatos, conforme versão da vítima" rows={3} className="bg-background border-border" /></div>
+                </div>
+
+                <div className="space-y-3">
+                  <Label>Tipo de Bem Subtraído</Label>
+                  <Select value={friTipoBem} onValueChange={setFriTipoBem}>
+                    <SelectTrigger className="bg-muted border-border"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="CELULAR">Celular</SelectItem>
+                      <SelectItem value="CORRENTINHA">Correntinha</SelectItem>
+                      <SelectItem value="CARTEIRA">Carteira</SelectItem>
+                      <SelectItem value="MALA">Mala</SelectItem>
+                      <SelectItem value="OUTROS">Outros</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {friTipoBem === "CELULAR" && (
+                  <div className="space-y-3 rounded-lg border border-primary/30 bg-primary/5 p-4">
+                    <Label>Houve rastreamento de aparelho celular?</Label>
+                    {simNao(friRastreamentoCelular, setFriRastreamentoCelular, "fri-rastreamento")}
+                    {friRastreamentoCelular === "sim" && (
+                      <div className="space-y-3">
+                        <Label>Dados do aparelho?</Label>
+                        {simNao(friDadosAparelho, setFriDadosAparelho, "fri-dados")}
+                        {friDadosAparelho === "sim" && (
+                          <div className="grid gap-4 md:grid-cols-2">
+                            <Input value={friImei} onChange={(e) => setFriImei(e.target.value)} placeholder="Digite o IMEI" className="bg-background border-border" />
+                            <Input value={friMarcaModelo} onChange={(e) => setFriMarcaModelo(e.target.value)} placeholder="Ex: Samsung Galaxy S21" className="bg-background border-border" />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="space-y-2"><Label>Local onde a vítima foi deixada</Label><Input value={friLocalDestino} onChange={(e) => setFriLocalDestino(e.target.value)} placeholder="Ex: CROP 6 BASE POSTO DE ATENDIMENTO" className="bg-muted border-border" /></div>
+
+                <div className="space-y-3 rounded-lg border border-primary/30 bg-primary/5 p-4">
+                  <Label>Dados do Autor</Label>
+                  <Label>Houve autor?</Label>
+                  {simNao(friTemAutor, setFriTemAutor, "fri-autor")}
+                  {friTemAutor === "sim" && (
+                    <div className="space-y-3">
+                      <div className="grid gap-4 md:grid-cols-3">
+                        <div className="space-y-2 md:col-span-2"><Label>Nome do Autor</Label><Input value={friNomeAutor} onChange={(e) => setFriNomeAutor(e.target.value)} placeholder="Colocar nome do autor" className="bg-background border-border" /></div>
+                        <div className="space-y-2"><Label>Gênero</Label>{generoSelect(friGeneroAutor, setFriGeneroAutor, "fri-genero-autor")}</div>
+                      </div>
+                      <div className="space-y-2"><Label>Declaração do Autor</Label><Textarea value={friDeclaracaoAutor} onChange={(e) => setFriDeclaracaoAutor(e.target.value)} placeholder="Descrever o que o autor declarou" rows={3} className="bg-background border-border" /></div>
+                      <div className="space-y-2"><Label>Delegacia de Encaminhamento</Label><Input value={friDelegacia} onChange={(e) => setFriDelegacia(e.target.value)} placeholder="Ex: DEPLAN 2" className="bg-background border-border" /></div>
+                    </div>
+                  )}
+                </div>
+
+                <Button onClick={gerarFurtoRouboImediato} className="w-full bg-primary text-primary-foreground hover:bg-primary/90"><FileText className="mr-2 h-4 w-4" />Gerar Histórico</Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="estelionato">
+            <Card>{formHeader("Estelionato/Fraude", "Modelo técnico com preservação de provas digitais e orientação financeira.")}
+              <CardContent className="space-y-5">
+                <div className="grid gap-4 md:grid-cols-3"><div className="space-y-2 md:col-span-2"><Label>Nome da vítima</Label><Input value={esNome} onChange={(e) => setEsNome(e.target.value)} className="bg-muted border-border" /></div><div className="space-y-2"><Label>Gênero</Label>{generoSelect(esGenero, setEsGenero, "es-genero")}</div></div>
+                <div className="grid gap-4 md:grid-cols-3"><div className="space-y-2"><Label>Data/período</Label><Input value={esData} onChange={(e) => setEsData(e.target.value)} className="bg-muted border-border" /></div><div className="space-y-2"><Label>Meio de contato</Label><Select value={esMeio} onValueChange={setEsMeio}><SelectTrigger className="bg-muted border-border"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="TELEFONE">Telefone</SelectItem><SelectItem value="WHATSAPP">WhatsApp</SelectItem><SelectItem value="REDE SOCIAL">Rede social</SelectItem><SelectItem value="E-MAIL">E-mail</SelectItem><SelectItem value="SITE/APLICATIVO">Site/aplicativo</SelectItem></SelectContent></Select></div><div className="space-y-2"><Label>Como o autor se identificou</Label><Input value={esAutorId} onChange={(e) => setEsAutorId(e.target.value)} className="bg-muted border-border" /></div></div>
+                <div className="space-y-2"><Label>Pretexto utilizado</Label><Textarea value={esPretexto} onChange={(e) => setEsPretexto(e.target.value)} rows={2} className="bg-muted border-border" /></div>
+                <div className="space-y-3"><Label>Houve pagamento ou transferência?</Label>{simNao(esPagou, setEsPagou, "es-pagou")}</div>
+                {esPagou === "sim" && <div className="grid gap-4 rounded-lg border border-primary/30 bg-primary/5 p-4 md:grid-cols-3"><Select value={esTipoPag} onValueChange={setEsTipoPag}><SelectTrigger className="bg-background border-border"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="PIX">Pix</SelectItem><SelectItem value="TRANSFERÊNCIA BANCÁRIA">Transferência</SelectItem><SelectItem value="BOLETO">Boleto</SelectItem><SelectItem value="PAGAMENTO COM CARTÃO">Cartão</SelectItem></SelectContent></Select><Input value={esValor} onChange={(e) => setEsValor(e.target.value)} placeholder="Valor" className="bg-background border-border" /><Input value={esDestinatario} onChange={(e) => setEsDestinatario(e.target.value)} placeholder="Destinatário/chave Pix" className="bg-background border-border" /></div>}
+                <Button onClick={gerarEstelionato} className="w-full bg-primary text-primary-foreground hover:bg-primary/90"><FileText className="mr-2 h-4 w-4" />Gerar Histórico</Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="transito">
+            <Card>{formHeader("Acidente de Trânsito", "Modelo com ou sem vítima, permanência das partes, perícia e danos.")}
+              <CardContent className="space-y-5">
+                <div className="grid gap-4 md:grid-cols-3"><div className="space-y-2 md:col-span-2"><Label>Local de registro</Label><Input value={trLocalRegistro} onChange={(e) => setTrLocalRegistro(e.target.value)} className="bg-muted border-border" /></div><div className="space-y-2"><Label>Com vítima?</Label>{simNao(trVitima, setTrVitima, "tr-vitima")}</div></div>
+                <div className="grid gap-4 md:grid-cols-3"><div className="space-y-2 md:col-span-2"><Label>Solicitante</Label><Input value={trSolicitante} onChange={(e) => setTrSolicitante(e.target.value)} className="bg-muted border-border" /></div><div className="space-y-2"><Label>Gênero</Label>{generoSelect(trGenero, setTrGenero, "tr-genero")}</div></div>
+                <div className="grid gap-4 md:grid-cols-4"><Input value={trData} onChange={(e) => setTrData(e.target.value)} placeholder="Data" className="bg-muted border-border" /><Input value={trHora} onChange={(e) => setTrHora(e.target.value)} placeholder="Hora" className="bg-muted border-border" /><Input value={trVia} onChange={(e) => setTrVia(e.target.value)} placeholder="Via" className="bg-muted border-border" /><Input value={trBairro} onChange={(e) => setTrBairro(e.target.value)} placeholder="Bairro" className="bg-muted border-border" /></div>
+                <div className="grid gap-4 md:grid-cols-2"><Textarea value={trVeiculo1} onChange={(e) => setTrVeiculo1(e.target.value)} placeholder="Veículo do solicitante: marca/modelo/placa" rows={2} className="bg-muted border-border" /><Textarea value={trVeiculo2} onChange={(e) => setTrVeiculo2(e.target.value)} placeholder="Outro veículo: marca/modelo/placa" rows={2} className="bg-muted border-border" /></div>
+                <div className="grid gap-4 md:grid-cols-2"><Input value={trLocalExato} onChange={(e) => setTrLocalExato(e.target.value)} placeholder="Ponto exato do sinistro" className="bg-muted border-border" /><Input value={trCondutor2} onChange={(e) => setTrCondutor2(e.target.value)} placeholder="Outro condutor" className="bg-muted border-border" /></div>
+                {trVitima === "sim" && <div className="space-y-4 rounded-lg border border-destructive/30 bg-destructive/5 p-4"><div className="grid gap-4 md:grid-cols-3"><Input value={trNomeVitima} onChange={(e) => setTrNomeVitima(e.target.value)} placeholder="Nome da vítima" className="bg-background border-border" />{generoSelect(trGeneroVitima, setTrGeneroVitima, "tr-genero-vitima")}<Input value={trLesoes} onChange={(e) => setTrLesoes(e.target.value)} placeholder="Lesões/queixas cautelosas" className="bg-background border-border" /></div><div className="grid gap-4 md:grid-cols-2"><Input value={trSocorro} onChange={(e) => setTrSocorro(e.target.value)} placeholder="Socorro: SAMU/Bombeiros/populares" className="bg-background border-border" /><Input value={trUnidadeSaude} onChange={(e) => setTrUnidadeSaude(e.target.value)} placeholder="Hospital/unidade" className="bg-background border-border" /></div>{modo === "completo" && <Textarea value={trVitimaDito} onChange={(e) => setTrVitimaDito(e.target.value)} placeholder="Relato da vítima, se relevante" rows={2} className="bg-background border-border" />}</div>}
+                {modo === "completo" && <div className="space-y-3"><Label>Há versão do outro condutor?</Label>{simNao(trTemVersaoCondutor2, setTrTemVersaoCondutor2, "tr-versao")}{trTemVersaoCondutor2 === "sim" && <Textarea value={trVersaoCondutor2} onChange={(e) => setTrVersaoCondutor2(e.target.value)} rows={2} className="bg-muted border-border" />}</div>}
+                <div className="grid gap-4 md:grid-cols-3"><div className="space-y-2"><Label>Perícia acionada?</Label>{simNao(trPericia, setTrPericia, "tr-pericia")}</div><div className="space-y-2"><Label>Partes permaneceram no local?</Label>{simNao(trPartesLocal, setTrPartesLocal, "tr-partes")}</div><div className="space-y-2"><Label>Danos nos veículos</Label><Input value={trDanosVeiculos} onChange={(e) => setTrDanosVeiculos(e.target.value)} className="bg-muted border-border" /></div></div>
+                <Button onClick={gerarTransito} className="w-full bg-primary text-primary-foreground hover:bg-primary/90"><FileText className="mr-2 h-4 w-4" />Gerar Histórico</Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="prisao">
+            <Card>{formHeader("Cumprimento de Prisão", "Modelo por informações de inteligência, Olho Vivo, dados do processo e encaminhamento.")}
+              <CardContent className="space-y-5">
+                <div className="grid gap-4 md:grid-cols-2"><Input value={prGuarnicao} onChange={(e) => setPrGuarnicao(e.target.value)} placeholder="Guarnição/viatura" className="bg-muted border-border" /><Input value={prComposicao} onChange={(e) => setPrComposicao(e.target.value)} placeholder="Composição da guarnição" className="bg-muted border-border" /></div>
+                <div className="grid gap-4 md:grid-cols-2"><Input value={prNumeroProcesso} onChange={(e) => setPrNumeroProcesso(e.target.value)} placeholder="Número do processo/mandado" className="bg-muted border-border" /><Input value={prDadosProcesso} onChange={(e) => setPrDadosProcesso(e.target.value)} placeholder="Vara/comarca/observação" className="bg-muted border-border" /></div>
+                <div className="space-y-3"><Label>Houve apoio de câmera Olho Vivo?</Label>{simNao(prTemCameras, setPrTemCameras, "pr-camera")}{prTemCameras === "sim" && <Input value={prNumeroCamera} onChange={(e) => setPrNumeroCamera(e.target.value)} placeholder="Número da câmera" className="bg-muted border-border" />}</div>
+                <Textarea value={prCaracteristicas} onChange={(e) => setPrCaracteristicas(e.target.value)} placeholder="Características do suspeito" rows={2} className="bg-muted border-border" />
+                <div className="grid gap-4 md:grid-cols-3"><Input value={prRuaRastreamento} onChange={(e) => setPrRuaRastreamento(e.target.value)} placeholder="Rua/local da localização" className="bg-muted border-border" /><Input value={prNomeSuspeito} onChange={(e) => setPrNomeSuspeito(e.target.value)} placeholder="Nome do conduzido" className="bg-muted border-border" />{generoSelect(prGeneroSuspeito, setPrGeneroSuspeito, "pr-genero")}</div>
+                <div className="grid gap-4 md:grid-cols-3"><div className="space-y-2"><Label>Houve resistência?</Label>{simNao(prResistencia, setPrResistencia, "pr-res")}</div><div className="space-y-2"><Label>Uso de algemas?</Label>{simNao(prAlgema, setPrAlgema, "pr-alg")}</div><div className="space-y-2"><Label>Encaminhamento</Label><Select value={prEncaminhamento} onValueChange={setPrEncaminhamento}><SelectTrigger className="bg-muted border-border"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="DEPLAN 2">DEPLAN 2</SelectItem><SelectItem value="DEPLAN 4">DEPLAN 4</SelectItem></SelectContent></Select></div></div>
+                {prResistencia === "sim" && <Textarea value={prResDesc} onChange={(e) => setPrResDesc(e.target.value)} placeholder="Descreva a resistência" rows={2} className="bg-muted border-border" />}
+                <Button onClick={gerarPrisao} className="w-full bg-primary text-primary-foreground hover:bg-primary/90"><FileText className="mr-2 h-4 w-4" />Gerar Histórico</Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="diversos">
+            <Card>{formHeader("Outros Modelos", "Modelos adicionais com campos reduzidos e texto técnico padronizado.")}
+              <CardContent className="space-y-5">
+                <div className="grid gap-4 md:grid-cols-3"><div className="space-y-2"><Label>Modelo</Label><Select value={divTipo} onValueChange={setDivTipo}><SelectTrigger className="bg-muted border-border"><SelectValue /></SelectTrigger><SelectContent>{modelosDiversos.map((modelo) => <SelectItem key={modelo} value={modelo}>{modelo}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>Nome da pessoa atendida</Label><Input value={divNome} onChange={(e) => setDivNome(e.target.value)} className="bg-muted border-border" /></div><div className="space-y-2"><Label>Gênero</Label>{generoSelect(divGenero, setDivGenero, "div-genero")}</div></div>
+                <div className="grid gap-4 md:grid-cols-3"><Input value={divLocal} onChange={(e) => setDivLocal(e.target.value)} placeholder="Local do fato/localização" className="bg-muted border-border" /><Input value={divDataHora} onChange={(e) => setDivDataHora(e.target.value)} placeholder="Data/hora/período" className="bg-muted border-border" /><Input value={divAutorNome} onChange={(e) => setDivAutorNome(e.target.value)} placeholder="Autor/envolvido, se houver" className="bg-muted border-border" /></div>
+                {modo === "completo" && <div className="space-y-2"><Label>Gênero do autor/envolvido</Label>{generoSelect(divAutorGenero, setDivAutorGenero, "div-autor-genero")}</div>}
+                <Textarea value={divRelato} onChange={(e) => setDivRelato(e.target.value)} placeholder="Relato objetivo do fato, sinais, danos, ameaças, agressões ou circunstâncias relevantes" rows={4} className="bg-muted border-border" />
+                <div className="space-y-2"><Label>Autor preso/conduzido?</Label>{simNao(divTemAutorPreso, setDivTemAutorPreso, "div-preso")}</div>
+                {modo === "completo" && <Textarea value={divProvidencias} onChange={(e) => setDivProvidencias(e.target.value)} placeholder="Providências ou observações complementares" rows={2} className="bg-muted border-border" />}
+                <Button onClick={gerarDiversos} className="w-full bg-primary text-primary-foreground hover:bg-primary/90"><FileText className="mr-2 h-4 w-4" />Gerar Histórico</Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="historico">
+            <Card>{formHeader("Histórico Local", "Registros salvos automaticamente neste navegador para consulta e reutilização.")}
+              <CardContent className="space-y-4">
+                {historico.length === 0 && <p className="text-sm text-muted-foreground">Nenhum registro salvo ainda.</p>}
+                {historico.map((item) => <div key={item.id} className="rounded-lg border border-border bg-muted p-4"><div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between"><div><p className="font-semibold">{item.tipo} — {item.nome}</p><p className="text-xs text-muted-foreground">{item.data}</p></div><div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => { setResultado(item.texto); setResultadoTipo(item.tipo); setResultadoNome(item.nome); }}><RotateCcw className="mr-2 h-4 w-4" />Reutilizar</Button><Button size="sm" variant="outline" onClick={() => excluirHistorico(item.id)}><Trash2 className="mr-2 h-4 w-4" />Excluir</Button></div></div></div>)}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+
+        {/* Seções utilitárias movidas para baixo dos modelos */}
+        {/* Resultado do histórico gerado - movido para o topo */}
+        {resultado && (
+          <Card className="mb-6 border-primary/30 bg-card">
+            <CardHeader>
+              <CardTitle className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <span>Histórico Gerado — {resultadoTipo}</span>
+                <div className="flex flex-wrap gap-2">
+                  <Button onClick={copiarTexto} size="sm" variant="outline"><Copy className="mr-2 h-4 w-4" />Copiar histórico</Button>
+                  <Button onClick={copiarComCabecalho} size="sm" variant="outline"><ClipboardList className="mr-2 h-4 w-4" />Copiar com cabeçalho</Button>
+                  <Button onClick={copiarResumo} size="sm" variant="outline"><BookOpen className="mr-2 h-4 w-4" />Copiar resumo</Button>
+                  <Button onClick={baixarTxt} size="sm" variant="outline"><Download className="mr-2 h-4 w-4" />TXT</Button>
+                  <Button onClick={baixarDoc} size="sm" variant="outline"><Save className="mr-2 h-4 w-4" />DOC</Button>
+                  <Button onClick={imprimirResultado} size="sm" variant="outline"><Printer className="mr-2 h-4 w-4" />PDF/Imprimir</Button>
+                </div>
+              </CardTitle>
+              <CardDescription>{resultadoNome}</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="min-h-[260px] rounded-lg border border-border bg-muted p-5 font-mono text-sm leading-relaxed whitespace-pre-wrap">{resultado}</div>
+            </CardContent>
+          </Card>
+        )}
+
+        {plantao && (
+          <Alert className="mb-6 border-primary/40 bg-primary/10">
+            <Shield className="h-4 w-4" />
+            <AlertDescription>Modo plantão ativo: use os atalhos abaixo para alternar rapidamente entre os modelos mais usados e gerar histórico com menos rolagem.</AlertDescription>
+          </Alert>
+        )}
+
+        {plantao && (
+          <Card className="mb-6 border-primary/25 bg-card">
+            <CardHeader>
+              <CardTitle className="text-lg">Atalhos de plantão</CardTitle>
+              <CardDescription>Selecione rapidamente a natureza mais comum durante o atendimento.</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-2 md:grid-cols-6">
+              {[
+                ["extravio", "Extravio"],
+                ["furto", "Furto/Roubo"],
+                ["estelionato", "Estelionato"],
+                ["transito", "Trânsito"],
+                ["prisao", "Prisão"],
+                ["diversos", "Outros"],
+              ].map(([valor, rotulo]) => (
+                <Button key={valor} variant="outline" className="border-border" onClick={() => setActiveTab(valor)}>{rotulo}</Button>
+              ))}
+            </CardContent>
+          </Card>
+        )}
+
+        <Card className="mb-6 border-primary/25 bg-card">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg"><RotateCcw className="h-5 w-5 text-primary" /> Dados comuns para reaproveitamento</CardTitle>
+            <CardDescription>Preencha uma vez e aplique nos modelos para reduzir digitação.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4 md:grid-cols-5">
+            <div className="space-y-2 md:col-span-2">
+              <Label>Nome principal</Label>
+              <Input value={comumNome} onChange={(e) => setComumNome(e.target.value)} placeholder="Nome completo" className="bg-muted border-border" />
+            </div>
+            <div className="space-y-2">
+              <Label>Gênero</Label>
+              {generoSelect(comumGenero, setComumGenero, "comum-genero")}
+            </div>
+            <div className="space-y-2">
+              <Label>Local</Label>
+              <Input value={comumLocal} onChange={(e) => setComumLocal(e.target.value)} className="bg-muted border-border" />
+            </div>
+            <div className="space-y-2">
+              <Label>Data/Hora</Label>
+              <Input value={comumDataHora} onChange={(e) => setComumDataHora(e.target.value)} placeholder="Ex: 30/04/2026, 14h" className="bg-muted border-border" />
+            </div>
+            <div className="md:col-span-5">
+              <Button onClick={aplicarDadosComuns} className="bg-primary text-primary-foreground hover:bg-primary/90">Aplicar dados na aba atual</Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {cardBancoFrequente()}
+
+        <Card className="border-primary/25 bg-card">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg"><BookOpen className="h-5 w-5 text-primary" /> Biblioteca técnica</CardTitle>
+            <CardDescription>Clique para inserir, ou use os ícones para editar/apagar.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {frasesTecnicas.map((frase) => (
+              <div key={frase.titulo} className="flex items-center gap-2 rounded-lg border border-border bg-muted p-2">
+                <button type="button" onClick={() => inserirFrase(frase.texto)} className="flex-1 text-left text-sm hover:text-primary truncate">{frase.titulo}</button>
+                <button type="button" onClick={() => editarFrase(frase)} className="p-1 text-muted-foreground hover:text-primary" title="Editar">
+                  <Edit2 className="h-4 w-4" />
+                </button>
+                <button type="button" onClick={() => setApagarFrase(frase)} className="p-1 text-muted-foreground hover:text-destructive" title="Apagar">
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+
+
+
+        {/* Modal de edição de frase técnica */}
+        <Dialog open={dialogAberto} onOpenChange={setDialogAberto}>
+          <DialogContent className="bg-card border-border">
+            <DialogHeader>
+              <DialogTitle>Editar frase técnica</DialogTitle>
+              <DialogDescription>Atualize o título e o texto da frase.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Título</Label>
+                <Input value={novoTitulo} onChange={(e) => setNovoTitulo(e.target.value)} className="bg-muted border-border" />
+              </div>
+              <div className="space-y-2">
+                <Label>Texto</Label>
+                <Textarea value={novoTexto} onChange={(e) => setNovoTexto(e.target.value)} rows={5} className="bg-muted border-border" />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setDialogAberto(false)}>Cancelar</Button>
+              <Button onClick={salvarEdicao} className="bg-primary text-primary-foreground hover:bg-primary/90">Salvar</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* AlertDialog de confirmação de exclusão */}
+        <AlertDialog open={!!apagarFrase} onOpenChange={(open) => !open && setApagarFrase(null)}>
+          <AlertDialogContent className="bg-card border-border">
+            <AlertDialogHeader>
+              <AlertDialogTitle>Apagar frase técnica?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Tem certeza que deseja apagar "{apagarFrase?.titulo}"? Esta ação não pode ser desfeita.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction onClick={confirmarDelecao} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Apagar</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </main>
+    </div>
+  );
+}

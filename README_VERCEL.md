@@ -18,3 +18,7 @@ pnpm install --no-frozen-lockfile
 ```
 
 Isso permite que o Vercel atualize o lockfile durante a instalação e siga com o build.
+
+## Atualização de interface
+
+A tela inicial foi reorganizada para priorizar os cards de modelos de registro. As funções de apoio, como históricos salvos, favoritos, ditado de relato e biblioteca operacional, foram posicionadas como apoio lateral para não disputar atenção com a função principal do sistema.

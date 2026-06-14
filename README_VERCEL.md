@@ -1,20 +1,20 @@
 # Deploy no Vercel
 
-Este projeto foi ajustado para subir no Vercel como aplicação estática Vite/React.
+Este projeto está configurado para subir como aplicação estática Vite/React.
 
-## Configurações no Vercel
+## Configurações
 
 - Framework Preset: **Vite**
+- Install Command: **pnpm install --no-frozen-lockfile**
 - Build Command: **pnpm run build**
 - Output Directory: **dist**
-- Install Command: **pnpm install**
 
-O arquivo `vercel.json` já define essas configurações e também inclui rewrite para SPA.
+## Erro corrigido
 
-## O que foi corrigido
+O Vercel usa `frozen-lockfile` em ambiente CI. Como o `package.json` foi ajustado, o `pnpm-lock.yaml` pode ficar diferente. Por isso o `installCommand` foi ajustado para:
 
-- Removido o uso de `server/index.ts` com Express.
-- Build agora gera somente arquivos estáticos.
-- `vite.config.ts` simplificado.
-- `outputDirectory` ajustado para `dist`.
-- Rewrites configurados para não quebrar rotas do React.
+```bash
+pnpm install --no-frozen-lockfile
+```
+
+Isso permite que o Vercel atualize o lockfile durante a instalação e siga com o build.
